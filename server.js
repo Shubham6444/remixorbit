@@ -1,36 +1,71 @@
-// server.js
+
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
+const socketIo = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = socketIo(server);
 
-// Serve a simple homepage for testing
-app.get('/', (req, res) => {
-    res.send('<h1>Socket.IO Server is Running</h1>');
-});
+// Serve static files
+app.use(express.static('public'));
+app.use(express.json());
 
-// Handle socket connections
+let users = []; // Store users' socket IDs and names
+
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
 
-    // Listen for messages from the client
-    socket.on('message', (data) => {
-        console.log('Received from client:', data);
-        // Broadcast the message to other clients
-        socket.broadcast.emit('message', data);
+    // When a user logs in
+    socket.on('login user', (user) => {
+        if (user && user.loginuser) {
+            // Add the new user to the users list
+            users.push({ id: socket.id, name: user.loginuser });
+            console.log(`User logged in: ${user.loginuser} (ID: ${socket.id})`);
+
+            // Broadcast the updated user list to all clients
+            io.emit('user id', {
+                id: socket.id,
+                users: users.map(user => ({ id: user.id, name: user.name }))
+            });
+        } else {
+            console.error('Invalid login user data:', user);
+        }
     });
 
-    // Handle disconnection
+    // When a user sends a message
+    socket.on('chat message', (msg) => {
+        if (msg && msg.msg && msg.sender && msg.id) {
+            console.log('Message received:', msg);
+
+            // Emit the message to the target user
+            io.to(msg.id).emit('chat message', {
+                rmsg: msg.msg,
+                sender: msg.sender,
+                id: socket.id,
+            });
+        } else {
+            console.error('Invalid message format:', msg);
+        }
+    });
+
+    // When a user disconnects
     socket.on('disconnect', () => {
         console.log('A user disconnected:', socket.id);
+
+        // Remove the user from the users list
+        users = users.filter(user => user.id !== socket.id);
+
+        // Broadcast updated user list to all clients
+        io.emit('user id', {
+            id: socket.id,
+            users: users.map(user => ({ id: user.id, name: user.name }))
+        });
     });
 });
 
-// Use dynamic port or fallback to 3000
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-});
+// Start the server
+server.listen(3000, () => {
+    console.log('Server running on http://localhost:3000');
+}); 
+
